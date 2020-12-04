@@ -9,20 +9,27 @@ typedef struct metaData{
     struct metaData *previous; //Pointer to previous element
     struct metaData *next;     //Pointer to next element MALLOC WILL RETURN THE POINTER OF THE MEMORY ADDRESS HERE
 
+    struct metaData *previousFree;
     struct metaData *nextFree;
-    struct metaData *prevFree;
 } metaData;
 
+//Global
+//int AllowedSizes[3];
 metaData *head = NULL;
 metaData *tail;
 pthread_mutex_t memoryLock;
+
 metaData *freeList;
 
 struct metaData *findFreeBlock(size_t size){
+
     struct metaData *current = head;
     //Traverse through the list of  blocks
+
     while (current != NULL){
+
         if (current->free && current->size >= size){
+            
             return current;
         }
         current = current->next; //continue onto the next block
@@ -30,25 +37,32 @@ struct metaData *findFreeBlock(size_t size){
     return NULL;
 }
 
+/////////////////////////////////////////////////////////////
 void *new_malloc(size_t size){
 
     //struct metaData *meta_dataBlock;
     struct metaData *header;
     void *block;
     size_t totalSize; //This is the total size including the metadata
+
     if (!size)
         return NULL;
-    //Thread (Critical Section)
 
+    
+    //Thread (Critical Section)
     pthread_mutex_lock(&memoryLock);
     header = findFreeBlock(size); //Returns the address of the free block called from the findFreeBlock() method if found, otherwise return NULL
 
     if (header != NULL){
         header->free = 0; //Changes the state of the memory block to 0 because it is no longer free
         if(header->size > size + sizeof(struct metaData)){
-
             void *wholeBlock = (void*) header ; //The memeory address returned by findfreeblock inclduing the metadata
             void *secondPart = wholeBlock + size+sizeof(struct metaData); //The second part is the whole block plus the metadata
+
+            //printf("\nI AM THE WHOLE BLOCK %p", wholeBlock);
+            //printf("\nI AM THE SECOND PART %p", secondPart);
+
+
             metaData* secondHeader = secondPart; //Create new metadata that stores the data of the previous block and its metadata (NOT SURE)
             secondHeader->free =1; 
             secondHeader->next = header->next;
@@ -61,30 +75,47 @@ void *new_malloc(size_t size){
                 tail = secondHeader;
             }
         }
-        pthread_mutex_unlock(&memoryLock);
-        return (void *)(header + 1); //+1 is the actual address the free space AFTER the metadata so if requesting 5 bytes it will return a pointer to a memory address with  6 bytes
+
+    
         
+        pthread_mutex_unlock(&memoryLock);
+        return (void *)(header + 1);
+        /*
+        +1 is the actual address the free space AFTER the metadata 
+        so if requesting 5 bytes it will return a pointer to a memory address with  6 bytes
+        */
     }
 
+    //
     //totalSize = sizeof(struct metaData) + size;
     totalSize = size + sizeof(struct metaData); //Total size of the heap INCLUDING the metadata
     block = sbrk(8192);
 
     //If sbrk does not fail by returning -1 then execute this block of code
     if (block != (void *)-1){ 
-        //Defines the header of the new acquired memory address
+        /*
+        * Defines the header of the new acquired memory address
+        * 
+        * 
+        * */
         header = block;
         header->size = size;
         header->free = 0;
-
+    
+        //void *secondPart = block + size+sizeof(struct metaData) -1 ;
         void *secondPart = block + size+sizeof(struct metaData);
+
         metaData* secondHeader = secondPart;
         secondHeader->free =1;
         secondHeader->next = NULL;
         secondHeader->previous = header;
         secondHeader->size = 8192- size - 2*sizeof(struct metaData); //Occupy the first header and second header 
+
         header->next = secondHeader;
         
+
+
+
         //If the linked list is empty then add the header as the first element
         if (head == NULL){
             head = header;
@@ -108,27 +139,47 @@ void *new_malloc(size_t size){
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void new_free(void *memoryBlockPtr){
 
     struct metaData *header;
     void *request;
 
-    // If the memory address is NULL then it means that free is trying to free memory that does not exist or is not occupied so it must return out of the program as it can't do anything
-    
+    /*
+     * If the memory address is NULL then it means that free is trying to free memory that does not exist
+     * or is not occupied so it must return out of the program as it can't do anything
+    */
+
     if (!memoryBlockPtr)
         return;
 
     pthread_mutex_lock(&memoryLock);
 
+     
     header = (struct metaData *)memoryBlockPtr - 1; //Return a pointer to the address containing the metedata 
+
     request = sbrk(0); //Return a pointer to the current address (increase heap by 0)
 
     if ((char *)memoryBlockPtr + header->size == request){ 
         //If this is the only block left in linked list then remove pointer by saying head == tail and making the tail and head null
         if (head == tail){
-            head = tail = NULL;   
+            head = tail = NULL;
+           
         }
-        //Remove last block from list
+        /* Else remove last block from list */
         else{
             tail = tail->previous;
             tail->next = NULL;    
@@ -141,6 +192,7 @@ void new_free(void *memoryBlockPtr){
     }
     //Free the memory = 1
     header->free = 1;
+    //pthread_mutex_unlock(&memoryLock);
 
     //Coalessing the memory blocks 
     if (header -> next != NULL && header->next->free == 1 && (void *)(header -> next )== (void *)(header) + sizeof(struct metaData) + header -> size){
@@ -171,6 +223,7 @@ void new_free(void *memoryBlockPtr){
 
 }
 
+
 void printHeap(){
 
     metaData * mCurrent = head;
@@ -186,6 +239,7 @@ void printHeap(){
     printf("\n");
 }
 
+
 void displayFreeMemroy(){
     metaData *current = head;
     int totalMemory = 0;
@@ -200,43 +254,34 @@ void displayFreeMemroy(){
     printf("\nTotal Free Memory: %d bytes\n", totalMemory);   
 }
 
-void printList(struct metaData *list){
-    
-     struct metaData *current = list;
 
-     while (current != NULL){
-         printf("\n Free Memory Addresses List %p", current + 1);
-         current = current->nextFree;
-    
-    }
+
+
+
+/*
+void myFunction(int x,int c){
+    if (x <= 1) 
+        return;
+    AllowedSizes[c] = x;
+    c++;
+    x = x / 2;
+    myFunction(x, c);
 }
+*/
 
-void addToFreeList(){
-    
-    metaData *current = head;
-    freeList = NULL;
-    while(current != NULL){
-        current->nextFree = NULL;
-         if (current->free == 1){
-             if(freeList){
-                current->nextFree = freeList;
-                freeList = current;
-             }
-             else{
-                 current->nextFree = NULL;
-                 current->prevFree = NULL;
-                 freeList = current;
-             }
-             
-         }
-        current = current->next;
-    }
-
-}
 
 int main(){
 
+    //myFunction(8192,0);
+    /*
+    for(int i=0; i<sizeof(AllowedSizes); i++)
+    {
+       printf("\n%d", AllowedSizes[i]);
+    }
+    */
+
     while (1) {
+
         char userInput[255];
         printf("\nEnter input: A<bytes> or F<addr>");
         scanf("%s", userInput);
@@ -258,22 +303,29 @@ int main(){
         }
 
         if(userInput[0] == 'P' || userInput[0] == 'p'){
-            printHeap(); 
-            addToFreeList();
-            printList(freeList);    
+            printHeap();     
         }
 
         if (userInput[0] == 'F' || userInput[0] == 'f'){
            
             char userInputNew[254]; 
+            //printf("test line");
             for (int i = 0; i < sizeof(userInputNew) -1 ; i++){
                 userInputNew[i] = userInput[i+1];
             }
-        
+            //printf("\n to delete %p",(void*)((size_t)strtol(userInputNew, NULL,0)));
             new_free((void*)((size_t)strtol(userInputNew, NULL,0)));
             displayFreeMemroy();
-        
+           
+            //printf("Memory Freed");
         }
 
+
     }
+
+    
+   
+
+
+
 }
